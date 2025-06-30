@@ -1,6 +1,7 @@
 .idea/*
-.env
+*.env
 humhub.env
+backup.env
 humhub-data
 humhub-data-docker
 caddy-data
