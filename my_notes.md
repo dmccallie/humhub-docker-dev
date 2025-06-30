@@ -157,3 +157,6 @@ AWS_S3_FILE_OVERWRITE=True
 AWS_S3_REGION_NAME='us-east-1'
 AWS_S3_BUCKET_NAME='test-humhub-backup'
 ```
+
+## how to restore - coming soon
+
