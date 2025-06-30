@@ -1,6 +1,6 @@
 FROM debian:bookworm
 
-ARG HUMHUB_GIT_BRANCH="develop"
+ARG HUMHUB_GIT_BRANCH="v1.17.2"
 
 RUN apt-get update && apt-get install -y \
     apache2 \
@@ -26,7 +26,8 @@ RUN sed -i 's/variables_order = "GPCS"/variables_order = "EGPCS"/g' /etc/php/8.2
 COPY files/apache-config.conf /etc/apache2/sites-available/000-default.conf
 COPY files/php-fpm-www.conf /etc/php/8.2/fpm/pool.d/www.conf
 
-EXPOSE 80
+#EXPOSE 80
+EXPOSE 8081
 
 #------------------------------------------------------------------------------------------------
 # Install Requirements: Composer, NPM, Less, Grunt 

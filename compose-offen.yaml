@@ -6,6 +6,10 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    
+    # dpm added restart always to ensure the service is restarted on failure
+    restart: always
+    
     volumes:
       - ./humhub-data:/var/lib/humhub
     env_file:
@@ -21,12 +25,26 @@ services:
       - HUMHUB_CONFIG__COMPONENTS__REDIS__PORT=6379
       - HUMHUB_CONFIG__COMPONENTS__REDIS__DATABASE=0
       - HUMHUB_CONFIG__COMPONENTS__SESSION__CLASS=yii\redis\Session
+
   db:
     image: mariadb
     restart: always
     user: root
+    # tell mariadb-dump to add a drop database and drop table statement so that 
+    #  the restore use a clean database
+    # note the hard-coded database name humhub (FIXME?)
+    labels:
+      - "docker-volume-backup.archive-pre=/bin/sh -c 'mariadb-dump \
+        --databases humhub \
+        --add-drop-database \
+        --add-drop-table \
+        --default-character-set=utf8mb4 \
+        -u${HUMHUB_DOCKER_DB_USER} \
+        -p${HUMHUB_DOCKER_DB_PASSWORD} \
+        > /tmp/dumps/dump.sql'"
     volumes:
       - ./mysql-data:/var/lib/mysql
+      - db-dump:/tmp/dumps
     environment:
         - MYSQL_ROOT_PASSWORD=${HUMHUB_DOCKER_DB_PASSWORD}
     expose:
@@ -36,6 +54,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+  
   caddy:
     image: caddy:latest
     ports:
@@ -55,6 +74,37 @@ services:
     command: redis-server --save 20 1 --loglevel warning
     volumes: 
       - cache:/data
+
+  # dpm add offen/docker-volume-backup sidecar for testing
+  # must use version v2 to support mariadb-dump
+  backup:
+    image: offen/docker-volume-backup:v2
+    restart: always
+    env_file:
+      - ./backup.env
+    volumes:
+      # bind-mount the HumHub data dir read-only into /backup/humhub-data
+      - ./humhub-data:/backup/humhub-data:ro
+      # volume mount the MySQL temp dump read-only into /backup/db-dump
+      - db-dump:/backup/db-dump:ro
+      # make a local copy for testing
+      - ./backups-local:/archive
+      # - ./caddy-data:/data/caddy-data
+      # allow the backup container to stop & start the HumHub container
+      - /var/run/docker.sock:/var/run/docker.sock:ro      
+    
+    # optional: label humhub so it’s stopped during backup for consistency
+    # labels:
+    #   - docker-volume-backup.stop-during-backup=true
+    
+    environment:
+      # every day at 2am
+      BACKUP_CRON_EXPRESSION: 0 2 * * *
+      BACKUP_FILENAME: backup-humhubdata-%Y-%m-%dT%H-%M-%S.tar.gz
+      BACKUP_PRUNING_PREFIX: backup-
+      BACKUP_RETENTION_DAYS: 14
+
 volumes:
   cache:
     driver: local
+  db-dump:

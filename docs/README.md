@@ -1,4 +1,5 @@
-# HumHub - Docker Image (Development Version)
+# Customization of HumHub/docker-dev for family networking site
+## Cloned from: HumHub - Docker Image (Development Version)
 
 The Docker package provides all the essential components for setting up your HumHub installation.
 
