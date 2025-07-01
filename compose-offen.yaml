@@ -58,7 +58,7 @@ services:
   caddy:
     image: caddy:latest
     ports:
-      - 8080:80
+      - 80:80
       - 443:443
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile
@@ -98,8 +98,8 @@ services:
     #   - docker-volume-backup.stop-during-backup=true
     
     environment:
-      # every day at 2am
-      BACKUP_CRON_EXPRESSION: 0 2 * * *
+      # every day at 2am (use UTC DST+5)
+      BACKUP_CRON_EXPRESSION: 0 7 * * *
       BACKUP_FILENAME: backup-humhubdata-%Y-%m-%dT%H-%M-%S.tar.gz
       BACKUP_PRUNING_PREFIX: backup-
       BACKUP_RETENTION_DAYS: 14
