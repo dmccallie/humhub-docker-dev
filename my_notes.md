@@ -158,5 +158,85 @@ AWS_S3_REGION_NAME='us-east-1'
 AWS_S3_BUCKET_NAME='test-humhub-backup'
 ```
 
-## how to restore - coming soon
+## How to restore - rough notes
 
+### from static backup (offen)
+1. Get or clear a VPS and install docker, etc.  Or clone from existing one.
+1. Clone down the customized repo from github into `/home/ubuntu/humhub-projects\humhub-docker-dev` (probably should be using /opt/humhub but doesn't seem to matter?)
+1. `scp` all the .env files (there are at least three) from secure home to the vps - verify the env values
+1. Copy the backup tar from s3 to the vps. Use s3 'temporary signed url' plus wget or curl. Will look similar to this:
+```
+wget --progress=bar:force -O ~/humhub-projects/backups/humhub-data-2025-06-30.tar.gz \
+"https://test-humhub-backup.s3.us-east-1.amazonaws.com/backup-humhubdata-2025-06-29T19-00-00.tar.gz?response-content-disposition=inline&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&> X-Amz-Security-Token=IQoJb3JpZ2l ... 4"
+```
+5. extract backup to `/tmp` using tar with `--strip-components=1` to give you humhub-data and dump.sql files. like this (assuming you are in the `humhub-docker-dev` directory)
+```
+tar -xzvf humhub-data-2025-06-30.tar.gz --strip_components=2 -C .
+```
+6. docker compose -f xxxx.yaml up humbub -> let installation run, but do not log in
+1. docker compose -f xxxx.yaml down -> stop humhub container
+1. remove the humhub-data directory (not necessary?)
+1. mv the /tmp/humhub-data to working directory (replacing humhub-data)
+1. some suggest chown all files in humhub-data, but it did not need it
+1. `docker compose -f xxxx.yaml up db` -> bring up mariadb
+1. use `./helper.sh import-db path/to/sql/dump.sql` to restore mariadb
+1. `docker compose -f xxxx.yaml up -d` -> should be running after a minute or two
+
+### Clone from a running system - might help?
+1. assuming vps1 and vps2 - bring up vps2 as clone of vps1 (gets docker etc for free)
+1. docker compose down on vps1
+1. use tar to backup all of humhub-data to /tmp like this (from within `humhub-docker-dev`)
+```
+sudo tar -czvf /tmp/humhub-data.tar.gz humhub-data
+``` 
+4. `docker compose -f xxx.yaml up db -d` (bring the db up)
+1. use `./helper.sh db-export path/to/export/location` to extract the db to an sql file
+
+####
+
+6. set up ~/.ssh/config on the home machine to point to the two vps addresses, like this:
+```
+Host vps1
+  HostName x.x.x.x
+  User ubuntu
+  IdentityFile ~/.ssh/xxxxxxx.pem
+  IdentitiesOnly yes
+
+Host vps2
+  Hostname y.y.y.y
+  User ubuntu
+  IdentityFile ~/.ssh/xxxxxxx.pem
+  IdentitiesOnly yes
+```
+7. use scp "third party" mode (-3) to copy the backup files from vps1 to vps2 backups folder
+```
+scp -3 vps1:/tmp/dump.sql vps2:/home/ubuntu//humhub-projects/humhub-docker-dev/backups/
+scp -3 vps1:/tmp/humhub-data.tar.gz vps2:/home/ubuntu//humhub-projects/humhub-docker-dev/backups/
+
+```
+8. Bring down the containers `docker compose -f xxx.yaml down`
+1. replace the old humhub-data with the new data from backup
+```
+sudo rm -rf humhub-data # (get rid of all old humhub data)
+tar -xzvf ./backups/humhub-data.tar.gz -C backups # (I think the directory must exist?)
+mv backups/humhub-data .
+
+```
+10. Bring db up and use helper script to import the sql data
+```
+docker compose -f xxx.yaml up db -d
+./helper.sh import-db backups/testdbbu.sql
+```
+1. restart containers
+
+
+
+## Other notes
+1. If you point an existing site to a new VPS, and remap the static IP, you still have to ensure that the caddy files are correctly pointing to the inbound expected DNS name.  There won't be a proper cert on the new VPS even if the caddyfile is correct.  I had to take the container down, brink up caddy alone to let it allocate a new cert, then bring everything back up.  Also true of any SSH connections that pointed to the old instance.  Even though the IP address moved to a new instance, SSH will refuse to connect since the host keys won't match that IP address.  Some useful commands:
+```
+docker compose up -d caddy
+docker compose logs -f caddy
+and
+ssh-keygen -f "/home/david/.ssh/known_hosts" -R "ip.that.points.differentlynow"
+```
+2. Difference between an `A` record and `CNAME`.  The `A` record is part of my registered domain, but I can point it directly to any IP address, so `test.mfs.com` can point to any vps address I want.  A `CNAME` on the other hand points is just an alias to any `A` record that I have created, so `humhub.mfs.com` points to `mfs.com` and requires a double DNS lookup to be resolved.  All of them are part of my paid-for domain registration.
