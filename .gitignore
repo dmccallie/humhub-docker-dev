@@ -7,3 +7,12 @@ humhub-data-docker
 caddy-data
 mysql-data
 backups-local
+backup
+*.gz
+*.sql
+*.sql.gz
+*.log
+*.log.gz
+*.zip
+*.tar.gz
+*.tar

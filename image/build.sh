@@ -1,1 +1,0 @@
-docker build --build-arg HUMHUB_GIT_BRANCH=develop --tag humhub/humhub-dev:latest .

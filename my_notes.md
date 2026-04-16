@@ -1,6 +1,6 @@
 ## notes on getting humhub running on lightsail
 
-### Create a ligthsail instance via AWS web console
+### Create a lightsail instance via AWS web console
 1. us-east-2a (Ohio) zone
 1. Ubuntu 22.04 LTS
 1. default ssh key
@@ -192,6 +192,7 @@ sudo tar -czvf /tmp/humhub-data.tar.gz humhub-data
 4. `docker compose -f xxx.yaml up db -d` (bring the db up)
 1. use `./helper.sh db-export path/to/export/location` to extract the db to an sql file
 
+
 ####
 
 6. set up ~/.ssh/config on the home machine to point to the two vps addresses, like this:
@@ -230,13 +231,114 @@ docker compose -f xxx.yaml up db -d
 1. restart containers
 
 
+### pseudo-restore - overlay on freshly cloned environment
+1. git clone new env
+1. scp up the three env files and edit as needed
+1. bring down the old env then bring up the old "db" (docker compose -f xxx up -d db)
+1. use ./helper.sh to export the sql from the old environment
+1. bring down the old db container!
+1. in the new environment:
+- sudo cp -r the old humhub-data to the new environment
+- bring up the new environment's db 
+- use ./helper.sh to import the SQL dump from the old env
+7. bring up the new environment
+1. Note that I never had to do an initial build or an initial login!
+
 
 ## Other notes
-1. If you point an existing site to a new VPS, and remap the static IP, you still have to ensure that the caddy files are correctly pointing to the inbound expected DNS name.  There won't be a proper cert on the new VPS even if the caddyfile is correct.  I had to take the container down, brink up caddy alone to let it allocate a new cert, then bring everything back up.  Also true of any SSH connections that pointed to the old instance.  Even though the IP address moved to a new instance, SSH will refuse to connect since the host keys won't match that IP address.  Some useful commands:
+1. To do a MANUAL BACKUP with Offen:
+```
+docker compose -f xxx.yaml down
+docker compose -f xxx.yaml up -d backup 
+docker exec backup-container-name-1 backup
+docker compose -f xxx.yaml up -d
+```
+2. If you point an existing site to a new VPS, and remap the static IP, you still have to ensure that the caddy files are correctly pointing to the inbound expected DNS name.  There won't be a proper cert on the new VPS even if the caddyfile is correct.  I had to take the container down, brink up caddy alone to let it allocate a new cert, then bring everything back up.  Also true of any SSH connections that pointed to the old instance.  Even though the IP address moved to a new instance, SSH will refuse to connect since the host keys won't match that IP address.  Some useful commands:
 ```
 docker compose up -d caddy
 docker compose logs -f caddy
 and
 ssh-keygen -f "/home/david/.ssh/known_hosts" -R "ip.that.points.differentlynow"
 ```
-2. Difference between an `A` record and `CNAME`.  The `A` record is part of my registered domain, but I can point it directly to any IP address, so `test.mfs.com` can point to any vps address I want.  A `CNAME` on the other hand points is just an alias to any `A` record that I have created, so `humhub.mfs.com` points to `mfs.com` and requires a double DNS lookup to be resolved.  All of them are part of my paid-for domain registration.
+3. Difference between an `A` record and `CNAME`.  The `A` record is part of my registered domain, but I can point it directly to any IP address, so `test.mfs.com` can point to any vps address I want.  A `CNAME` on the other hand points is just an alias to any `A` record that I have created, so `humhub.mfs.com` points to `mfs.com` and requires a double DNS lookup to be resolved.  All of them are part of my paid-for domain registration.
+
+## Notes before migration to new docker images (post v18)
+- copy the backup down or over from S3 and expand with
+```
+tar -tzf daily-2026-04-14T07-00-01.tar.gz 
+```
+This creates something like:
+```
+/backup/db-dump/dump.sql
+/backup/humhub-data/uploads
+/backup/humhub-data/...
+```
+Apparently ALL I NEED is the /uploads, since I don't have a custom theme or custom modules
+DO NOT copy over the other folders (e.g. assets, config, logs, modules, modules-custom, themes)
+
+- adjust compose file to point `SERVER_NAME=":80"` to run on localhost:80. Note that I had to disable MSFT's IIS to get access to port 80!
+- bring up vanilla empty HH before copying the backup data and maria db data, then take it down, bring up DB only, and copy in DB data using something like this. Note that you can use Docker or Docker Compose.  With compose, -T turns off TTY. Note that DB name is `humhub`, not the full `HUMHUB_DOCKER_DB_DSN="mysql:host=db;dbname=humhub"` name!
+- consider using the `helper` shell from earlier versions!
+```
+docker compose exec -T db /bin/mariadb -u root -pmccallie humhub < backup/db-dump/dump.sql
+```
+- Use the helper!
+```
+docker compose -f xxx.yaml up db -d
+./helper.sh import-db backup/db-dump/dump.sql
+```
+- copy the backup data from wherever it was expanded, on top of the /humhub-data directory.
+- NOTE THAT ONLY A FEW DIRECTORIES NEED TO BE COPIED!. The star up will create all the other folders and will auto-populate the modules you have configured!
+Like this:
+```
+sudo cp -r backup/humhub-data/uploads /humhub-data/ [????]
+```
+- here's a full install from BU that worked
+```
+pwd [verify in the project directory]
+sudo rm -rf humhub-data [get rid of prior install footprint]
+docker compose pull  [get updated images]                          
+docker compose up db -d [bring up the db only]                            
+./helper.sh import-db ./backup/db-dump/dump.sql  [import the db from backup]
+docker compose down
+sudo cp -r ./backup/humhub-data/uploads humhub-data/ [copy the uploads data]
+docker compose up -d
+docker compose logs -f  [watch it rebuild everything...]
+```
+- consider changing BU to only save /uploads (saves about 50MB per BU file) by adding the following to the compose file:
+```
+  backup:
+    image: offen/docker-volume-backup:v2
+    restart: unless-stopped
+    env_file:
+      - ./backup.env
+    volumes:
+      # bind-mount the HumHub data dir read-only into /backup/humhub-data
+      # this saves only the /data/uploads dir 
+      - ./humhub-data/uploads:/backup/humhub-data/uploads:ro
+      # volume mount the MySQL temp dump read-only into /backup/db-dump
+      - db-dump:/backup/db-dump:ro
+      
+      # make a local copy for testing (into ./backups-local) 
+      # - ./backups-local:/archive
+      # - ./caddy-data:/data/caddy-data
+      # allow the backup container to stop & start the HumHub container
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      #
+      # added to allow weekly and monthly backups using backup-conf.d
+      - ./backup-conf.d:/etc/dockervolumebackup/conf.d:ro
+
+    # optional: label humhub so it’s stopped during backup for consistency
+    # labels:
+    #   - docker-volume-backup.stop-during-backup=true
+
+    # we now use backup-conf.d/ for daily, weekly, monthly versions
+    # environment:
+    #   # every day at 2am (use UTC = DST+5)
+    #   BACKUP_CRON_EXPRESSION: 0 7 * * *
+    #   BACKUP_FILENAME: backup-humhubdata-%Y-%m-%dT%H-%M-%S.tar.gz
+    #   BACKUP_PRUNING_PREFIX: backup-
+    #   BACKUP_RETENTION_DAYS: 30
+volumes:
+  db-dump:
+```
