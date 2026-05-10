@@ -1,7 +1,7 @@
 # experimental tests with new HumHub docker image
 services:
   humhub:
-    image: humhub/humhub:stable-nightly # need to change to a release after testing.
+    image: humhub/humhub:1.18.2 # need to change to a release after testing.
     restart: unless-stopped
     ports:
       - "80:80"

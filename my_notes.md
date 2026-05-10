@@ -265,7 +265,7 @@ ssh-keygen -f "/home/david/.ssh/known_hosts" -R "ip.that.points.differentlynow"
 ## Notes before migration to new docker images (post v18)
 - copy the backup down or over from S3 and expand with
 ```
-tar -tzf daily-2026-04-14T07-00-01.tar.gz 
+tar -xzvf daily-2026-04-14T07-00-01.tar.gz 
 ```
 This creates something like:
 ```
@@ -296,12 +296,13 @@ sudo cp -r backup/humhub-data/uploads /humhub-data/ [????]
 - here's a full install from BU that worked
 ```
 pwd [verify in the project directory]
+tar -xzvf daily-2026-04-14T07-00-01.tar.gz [get the backup data into /backup/*]
 sudo rm -rf humhub-data [get rid of prior install footprint]
-docker compose pull  [get updated images]                          
+docker pull [get updated images, eg docker pull humhub/humhub:1.18.2]                          
 docker compose up db -d [bring up the db only]                            
 ./helper.sh import-db ./backup/db-dump/dump.sql  [import the db from backup]
 docker compose down
-sudo cp -r ./backup/humhub-data/uploads humhub-data/ [copy the uploads data]
+sudo cp -r ./backup/humhub-data/uploads humhub-data/   [copy the uploads data]
 docker compose up -d
 docker compose logs -f  [watch it rebuild everything...]
 ```
